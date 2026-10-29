@@ -3,6 +3,7 @@ import os
 import tempfile
 import time
 import unittest
+from unittest.mock import patch
 from pathlib import Path
 
 import config
@@ -12,6 +13,7 @@ from renderer import Canvas
 from persistence import load_explorer, save_explorer
 from rocket import _sprite_for, sprite_size
 from metrics import SystemMonitor
+from docker_monitor import DockerMonitor, DockerSnapshot, _docker_json
 
 
 class ProceduralTests(unittest.TestCase):
@@ -89,6 +91,29 @@ class RendererTests(unittest.TestCase):
             sprite = _sprite_for(mode, 1.0)
             self.assertIsInstance(sprite, tuple)
             self.assertTrue(all("\n" not in line and line.isascii() for line in sprite))
+
+
+class DockerMonitorTests(unittest.TestCase):
+    @patch("docker_monitor.subprocess.run")
+    def test_docker_json_uses_structured_output(self, run):
+        run.return_value.stdout = '{"Names":"web","State":"running"}\n'
+        self.assertEqual(_docker_json("container", "ls", "--all")[0]["Names"], "web")
+        command = run.call_args.args[0]
+        self.assertEqual(command[:4], ["docker", "container", "ls", "--all"])
+        self.assertIn("{{json .}}", command)
+
+    @patch("docker_monitor._docker_json")
+    def test_monitor_collects_container_and_image_totals(self, docker_json):
+        docker_json.side_effect = [
+            [{"Names": "web", "Image": "app:latest", "State": "running", "Status": "Up 1 hour"}],
+            [{"Repository": "app", "Tag": "latest", "Size": "120MB"}],
+        ]
+        monitor = DockerMonitor()
+        monitor._refresh()
+        snapshot = monitor._snapshot
+        self.assertIsInstance(snapshot, DockerSnapshot)
+        self.assertEqual(snapshot.running, 1)
+        self.assertEqual(snapshot.images[0].name, "app:latest")
 
 
 class ExplorerTests(unittest.TestCase):

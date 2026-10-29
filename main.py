@@ -9,6 +9,7 @@ import sys
 import time
 
 import config
+from docker_monitor import DockerMonitor
 from explorer import Explorer
 from metrics import SystemMonitor
 from persistence import load_explorer, save_explorer
@@ -47,6 +48,7 @@ def run(explorer: Explorer, use_colors: bool, fps: float) -> None:
     last_save = previous
     last_metrics = previous - config.METRICS_REFRESH_INTERVAL
     monitor = SystemMonitor()
+    docker_monitor = DockerMonitor()
     sys.stdout.write(CLEAR + HOME + HIDE_CURSOR)
     sys.stdout.flush()
     try:
@@ -58,6 +60,7 @@ def run(explorer: Explorer, use_colors: bool, fps: float) -> None:
                 metrics = monitor.sample()
                 explorer.set_system_metrics(metrics.cpu_percent, metrics.memory_percent)
                 last_metrics = started
+            explorer.set_docker_snapshot(docker_monitor.sample())
             width, height = terminal_area()
             if width < config.MIN_WIDTH or height < config.MIN_HEIGHT:
                 message = f"Terminal pequeno: mínimo {config.MIN_WIDTH + 1}x{config.MIN_HEIGHT}"

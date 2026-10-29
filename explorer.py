@@ -7,6 +7,7 @@ import random
 from enum import Enum, auto
 
 import config
+from docker_monitor import DockerSnapshot
 from procedural import (
     Planet,
     Star,
@@ -87,6 +88,7 @@ class Explorer:
             config.MIN_BACKGROUND_BLACK_HOLE_INTERVAL,
             config.MAX_BACKGROUND_BLACK_HOLE_INTERVAL,
         )
+        self.docker_snapshot: DockerSnapshot | None = None
 
     @property
     def progress(self) -> float:
@@ -230,6 +232,10 @@ class Explorer:
         )
         if self.memory_pressure and not previous_pressure:
             self.stats["resource_alerts"] += 1
+
+    def set_docker_snapshot(self, snapshot: DockerSnapshot | None) -> None:
+        if snapshot is not None:
+            self.docker_snapshot = snapshot
 
     def register_cosmic_objects(self, visible: list[tuple[int, str]]) -> None:
         unseen = [item for item in visible if self.max_cosmic_sector is None or item[0] > self.max_cosmic_sector]
@@ -471,6 +477,30 @@ class Explorer:
             canvas.text(1, 3, f"DISTANCE: {int(self.distance):06d} AU  VISITED: {self.visited}", "dim")
             metric_color = "red" if self.gravity_critical else "yellow" if self.memory_pressure else "dim"
             canvas.text(1, 4, self._metrics_text(), metric_color)
+            self._draw_docker_hud(canvas)
+
+    def _draw_docker_hud(self, canvas: Canvas) -> None:
+        snapshot = self.docker_snapshot
+        if snapshot is None:
+            summary = "DOCKER: CHECKING..."
+        elif not snapshot.available:
+            summary = "DOCKER: UNAVAILABLE"
+        else:
+            summary = (
+                f"DOCKER: {snapshot.running}/{len(snapshot.containers)} RUNNING"
+                f"  IMAGES: {len(snapshot.images)}"
+            )
+        canvas.text(1, 5, summary[: canvas.width - 2], "dim")
+        if not snapshot or not snapshot.available or canvas.width < 80 or canvas.height < 18:
+            return
+        if snapshot.containers:
+            container = snapshot.containers[0]
+            detail = f"CONTAINER: {container.name} | {container.image} | {container.status}"
+            canvas.text(1, 6, detail[: canvas.width - 2], "green" if container.state.lower() == "running" else "yellow")
+        if snapshot.images:
+            image = snapshot.images[0]
+            detail = f"IMAGE: {image.name} | {image.size}"
+            canvas.text(1, 7, detail[: canvas.width - 2], "dim")
 
     def _metrics_text(self) -> str:
         cpu = "--" if self.cpu_percent is None else f"{self.cpu_percent:4.1f}%"
